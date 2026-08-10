@@ -8,14 +8,14 @@ CREATE TABLE IF NOT EXISTS comanda_pagamento (
     forma_pagamento VARCHAR(30) NOT NULL,
     origem VARCHAR(20) NOT NULL,
     data_pagamento DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_pagamento_adega_uuid FOREIGN KEY (adega_uuid) REFERENCES adega(uuid),
-    CONSTRAINT fk_pagamento_comanda_uuid FOREIGN KEY (comanda_uuid) REFERENCES comanda(uuid),
-    CONSTRAINT fk_pagamento_usuario_uuid FOREIGN KEY (usuario_uuid) REFERENCES usuario(uuid),
-    CONSTRAINT chk_pagamento_valor CHECK (valor > 0),
-    CONSTRAINT chk_pagamento_forma CHECK (
+    CONSTRAINT fk_comanda_pagamento_adega_uuid FOREIGN KEY (adega_uuid) REFERENCES adega(uuid),
+    CONSTRAINT fk_comanda_pagamento_comanda_uuid FOREIGN KEY (comanda_uuid) REFERENCES comanda(uuid),
+    CONSTRAINT fk_comanda_pagamento_usuario_uuid FOREIGN KEY (usuario_uuid) REFERENCES usuario(uuid),
+    CONSTRAINT chk_comanda_pagamento_valor CHECK (valor > 0),
+    CONSTRAINT chk_comanda_pagamento_forma CHECK (
         forma_pagamento IN ('DINHEIRO', 'PIX', 'CARTAO_DEBITO', 'CARTAO_CREDITO', 'OUTRO', 'NAO_INFORMADA')
     ),
-    CONSTRAINT chk_pagamento_origem CHECK (origem IN ('PARCIAL', 'FECHAMENTO', 'MIGRADO')),
+    CONSTRAINT chk_comanda_pagamento_origem CHECK (origem IN ('PARCIAL', 'FECHAMENTO', 'MIGRADO')),
     INDEX idx_pagamento_adega_data (adega_uuid, data_pagamento),
     INDEX idx_pagamento_comanda_data (comanda_uuid, data_pagamento)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
