@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import Card from "@mui/material/Card";
@@ -21,7 +21,9 @@ import { useUser } from "context/user.context";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import Footer from "examples/Footer";
-import { Comanda, Produto, comandasApi, getApiErrorMessage, produtosApi } from "services/adega";
+import { DashboardResumo, dashboardApi, getApiErrorMessage } from "services/adega";
+import PaymentMethodsChart from "./PaymentMethodsChart";
+import RevenueEvolutionChart from "./RevenueEvolutionChart";
 
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -29,6 +31,8 @@ const statCardColors = {
   open: "linear-gradient(135deg, #1A73E8 0%, #1557B0 100%)",
   credit: "linear-gradient(135deg, #F59E0B 0%, #B45309 100%)",
   paid: "linear-gradient(135deg, #16A34A 0%, #0F766E 100%)",
+  ticket: "linear-gradient(135deg, #7C3AED 0%, #5B21B6 100%)",
+  completed: "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)",
   stock: "linear-gradient(135deg, #DC2626 0%, #9F1239 100%)",
 };
 
@@ -141,17 +145,22 @@ function getBillingLabel(period: BillingPeriod, value: string) {
   return value || "Ano";
 }
 
-function isWithinBillingRange(
-  dateValue: string | null | undefined,
-  range: { start: Date | null; end: Date | null }
-) {
-  if (!dateValue) return false;
-  if (!range.start || !range.end) return false;
+function getComparisonLabel(comparison: DashboardResumo["comparacaoPeriodoAnterior"]) {
+  if (!comparison) return "Comparação indisponível";
 
-  const date = new Date(dateValue);
-  if (Number.isNaN(date.getTime())) return false;
+  const previousTotal = Number(comparison.totalRecebido || 0);
+  const difference = Number(comparison.diferenca || 0);
+  const percentage = comparison.variacaoPercentual;
 
-  return date >= range.start && date <= range.end;
+  if (previousTotal === 0 && difference === 0) return "Sem movimento nos dois períodos";
+  if (percentage === null || percentage === undefined) return "Sem base no período anterior";
+
+  const formattedPercentage = new Intl.NumberFormat("pt-BR", {
+    maximumFractionDigits: 1,
+  }).format(Math.abs(Number(percentage)));
+  if (Number(percentage) > 0) return `↑ ${formattedPercentage}% vs. período anterior`;
+  if (Number(percentage) < 0) return `↓ ${formattedPercentage}% vs. período anterior`;
+  return "Sem variação vs. período anterior";
 }
 
 function StatCard({
@@ -190,8 +199,7 @@ function StatCard({
 
 function Home() {
   const { isGestor, userData } = useUser();
-  const [produtos, setProdutos] = useState<Produto[]>([]);
-  const [comandas, setComandas] = useState<Comanda[]>([]);
+  const [summary, setSummary] = useState<DashboardResumo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>("day");
@@ -200,15 +208,17 @@ function Home() {
 
   useEffect(() => {
     const fetchData = async () => {
+      const range = getBillingRange(billingPeriod, billingValue);
+      if (!range.start || !range.end) return;
+
       setLoading(true);
       setError("");
       try {
-        const [produtosData, comandasData] = await Promise.all([
-          produtosApi.list(),
-          comandasApi.list(),
-        ]);
-        setProdutos(produtosData);
-        setComandas(comandasData);
+        const data = await dashboardApi.summary(
+          formatDateInput(range.start),
+          formatDateInput(range.end)
+        );
+        setSummary(data);
       } catch (fetchError) {
         setError(getApiErrorMessage(fetchError));
       } finally {
@@ -217,45 +227,7 @@ function Home() {
     };
 
     fetchData();
-  }, []);
-
-  const metrics = useMemo(() => {
-    const abertas = comandas.filter((comanda) => comanda.status === "ABERTA");
-    const fiado = comandas.filter((comanda) => comanda.status === "FIADO");
-    const billingRange = getBillingRange(billingPeriod, billingValue);
-    const pagasNoPeriodo = comandas.filter(
-      (comanda) =>
-        comanda.status === "PAGA" && isWithinBillingRange(comanda.dataFechamento, billingRange)
-    );
-    const abertasNoPeriodo = abertas.filter((comanda) =>
-      isWithinBillingRange(comanda.dataAbertura, billingRange)
-    );
-    const fiadoNoPeriodo = fiado.filter((comanda) =>
-      isWithinBillingRange(comanda.dataFechamento, billingRange)
-    );
-    const fiadoTotal = fiado.reduce(
-      (acc, comanda) => acc + Number(comanda.saldoPendente ?? comanda.total ?? 0),
-      0
-    );
-    const faturamentoPago = pagasNoPeriodo.reduce(
-      (acc, comanda) => acc + Number(comanda.total || 0),
-      0
-    );
-    const faturamentoParcialFiado = fiadoNoPeriodo.reduce(
-      (acc, comanda) => acc + Number(comanda.valorPagoParcial || 0),
-      0
-    );
-    const faturamentoParcialAberto = abertasNoPeriodo.reduce(
-      (acc, comanda) => acc + Number(comanda.valorPagoParcial || 0),
-      0
-    );
-    const faturamento = faturamentoPago + faturamentoParcialFiado + faturamentoParcialAberto;
-    const baixoEstoque = produtos.filter(
-      (produto) => produto.quantidadeEstoqueUnidades <= produto.alertaEstoqueUnidades
-    );
-
-    return { abertas, fiado, fiadoTotal, faturamento, baixoEstoque };
-  }, [billingPeriod, billingValue, comandas, produtos]);
+  }, [billingPeriod, billingValue]);
 
   return (
     <DashboardLayout>
@@ -333,36 +305,56 @@ function Home() {
 
         <Grid container spacing={3}>
           {isGestor && (
-              <Grid item xs={12} md={3}>
-                <StatCard
-                    label="Faturado"
-                    value={currency.format(metrics.faturamento)}
-                    helper={getBillingLabel(billingPeriod, billingValue)}
-                    tone="paid"
-                />
-              </Grid>
+            <Grid item xs={12} sm={6} lg={4} xl={2}>
+              <StatCard
+                label="Faturado"
+                value={currency.format(Number(summary?.totalRecebido || 0))}
+                helper={getComparisonLabel(summary?.comparacaoPeriodoAnterior)}
+                tone="paid"
+              />
+            </Grid>
           )}
-          <Grid item xs={12} md={isGestor ? 3 : 4}>
+          {isGestor && (
+            <Grid item xs={12} sm={6} lg={4} xl={2}>
+              <StatCard
+                label="Ticket médio"
+                value={currency.format(Number(summary?.ticketMedio || 0))}
+                helper={getBillingLabel(billingPeriod, billingValue)}
+                tone="ticket"
+              />
+            </Grid>
+          )}
+          {isGestor && (
+            <Grid item xs={12} sm={6} lg={4} xl={2}>
+              <StatCard
+                label="Comandas pagas"
+                value={summary?.quantidadeComandasPagas || 0}
+                helper={getBillingLabel(billingPeriod, billingValue)}
+                tone="completed"
+              />
+            </Grid>
+          )}
+          <Grid item xs={12} sm={6} lg={4} xl={isGestor ? 2 : 4}>
             <StatCard
               label="Comandas abertas"
-              value={metrics.abertas.length}
+              value={summary?.quantidadeComandasAbertas || 0}
               helper="Em atendimento"
               tone="open"
             />
           </Grid>
-          <Grid item xs={12} md={isGestor ? 3 : 4}>
+          <Grid item xs={12} sm={6} lg={4} xl={isGestor ? 2 : 4}>
             <StatCard
               label="Fiado"
-              value={metrics.fiado.length}
-              helper={`A receber: ${currency.format(metrics.fiadoTotal)}`}
+              value={summary?.quantidadeComandasFiado || 0}
+              helper={`A receber: ${currency.format(Number(summary?.valorPendenteFiado || 0))}`}
               tone="credit"
             />
           </Grid>
 
-          <Grid item xs={12} md={isGestor ? 3 : 4}>
+          <Grid item xs={12} sm={6} lg={4} xl={isGestor ? 2 : 4}>
               <StatCard
                 label="Baixo estoque"
-                value={metrics.baixoEstoque.length}
+                value={summary?.quantidadeProdutosBaixoEstoque || 0}
                 helper="Conforme alerta de cada produto"
                 tone="stock"
               />
@@ -372,7 +364,7 @@ function Home() {
             <Card>
               <MDBox p={3}>
                 <MDTypography variant="h6" fontWeight="medium">
-                  Comandas abertas
+                  Comandas abertas recentes
                 </MDTypography>
               </MDBox>
               <TableContainer>
@@ -391,14 +383,14 @@ function Home() {
                       </TableRow>
                     )}
                     {!loading &&
-                      metrics.abertas.map((comanda) => (
+                      (summary?.comandasAbertas || []).map((comanda) => (
                         <TableRow key={comanda.uuid}>
                           <TableCell>{comanda.nomeResponsavel}</TableCell>
-                          <TableCell>{comanda.itens.length}</TableCell>
+                          <TableCell>{comanda.quantidadeItens}</TableCell>
                           <TableCell>{currency.format(Number(comanda.total || 0))}</TableCell>
                         </TableRow>
                       ))}
-                    {!loading && metrics.abertas.length === 0 && (
+                    {!loading && (summary?.comandasAbertas.length || 0) === 0 && (
                       <TableRow>
                         <TableCell colSpan={3}>Nenhuma comanda aberta.</TableCell>
                       </TableRow>
@@ -426,14 +418,14 @@ function Home() {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {metrics.baixoEstoque.map((produto) => (
+                    {(summary?.produtosBaixoEstoque || []).map((produto) => (
                       <TableRow key={produto.uuid}>
                         <TableCell>{produto.nome}</TableCell>
                         <TableCell>{produto.quantidadeEstoqueUnidades}</TableCell>
                         <TableCell>{produto.alertaEstoqueUnidades}</TableCell>
                       </TableRow>
                     ))}
-                    {!loading && metrics.baixoEstoque.length === 0 && (
+                    {!loading && (summary?.produtosBaixoEstoque.length || 0) === 0 && (
                       <TableRow>
                         <TableCell colSpan={3}>Estoque sem alertas.</TableCell>
                       </TableRow>
@@ -443,6 +435,66 @@ function Home() {
               </TableContainer>
             </Card>
           </Grid>
+
+          {isGestor && (
+            <Grid item xs={12}>
+              <PaymentMethodsChart
+                loading={loading}
+                periodLabel={getBillingLabel(billingPeriod, billingValue)}
+                receipts={summary?.recebimentosPorForma || []}
+              />
+            </Grid>
+          )}
+
+          {isGestor && (
+            <Grid item xs={12} lg={7}>
+              <RevenueEvolutionChart
+                loading={loading}
+                periodLabel={getBillingLabel(billingPeriod, billingValue)}
+                receipts={summary?.evolucaoRecebimentos || []}
+              />
+            </Grid>
+          )}
+
+          {isGestor && (
+            <Grid item xs={12} lg={5}>
+              <Card sx={{ height: "100%" }}>
+                <MDBox p={3}>
+                  <MDTypography variant="h6" fontWeight="medium">
+                    Produtos mais vendidos
+                  </MDTypography>
+                  <MDTypography variant="button" color="text">
+                    {getBillingLabel(billingPeriod, billingValue)}
+                  </MDTypography>
+                </MDBox>
+                <TableContainer>
+                  <Table>
+                    <TableHead sx={{ display: "table-header-group" }}>
+                      <TableRow>
+                        <TableCell>Produto</TableCell>
+                        <TableCell>Unidades</TableCell>
+                        <TableCell>Valor</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {(summary?.produtosMaisVendidos || []).map((produto) => (
+                        <TableRow key={produto.produtoUuid}>
+                          <TableCell>{produto.produtoNome}</TableCell>
+                          <TableCell>{produto.unidadesVendidas}</TableCell>
+                          <TableCell>{currency.format(Number(produto.valorVendido || 0))}</TableCell>
+                        </TableRow>
+                      ))}
+                      {!loading && (summary?.produtosMaisVendidos.length || 0) === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={3}>Nenhum produto vendido no período.</TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Card>
+            </Grid>
+          )}
         </Grid>
       </MDBox>
       <Footer />

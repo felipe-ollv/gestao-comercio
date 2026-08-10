@@ -15,6 +15,7 @@ public record ComandaResponse(
         LocalDateTime dataExclusao,
         StatusComanda status,
         List<ComandaItemResponse> itens,
+        List<ComandaPagamentoResponse> pagamentos,
         BigDecimal total,
         BigDecimal valorPagoParcial,
         BigDecimal saldoPendente,
@@ -23,6 +24,9 @@ public record ComandaResponse(
     public static ComandaResponse from(Comanda comanda) {
         List<ComandaItemResponse> itens = comanda.itens.stream()
                 .map(ComandaItemResponse::from)
+                .toList();
+        List<ComandaPagamentoResponse> pagamentos = comanda.pagamentos.stream()
+                .map(ComandaPagamentoResponse::from)
                 .toList();
         BigDecimal total = itens.stream()
                 .map(ComandaItemResponse::subtotal)
@@ -37,6 +41,7 @@ public record ComandaResponse(
                 comanda.dataExclusao,
                 comanda.status,
                 itens,
+                pagamentos,
                 total,
                 valorPagoParcial,
                 saldoPendente,

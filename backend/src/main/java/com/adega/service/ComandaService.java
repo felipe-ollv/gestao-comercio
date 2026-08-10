@@ -8,24 +8,32 @@ import com.adega.dto.ComandaResponse;
 import com.adega.dto.ExcluirComandaRequest;
 import com.adega.dto.FecharComandaRequest;
 import com.adega.dto.PagamentoParcialComandaRequest;
+import com.adega.dto.PaginaResponse;
 import com.adega.exception.BusinessException;
 import com.adega.exception.ForbiddenOperationException;
 import com.adega.model.Adega;
 import com.adega.model.Comanda;
 import com.adega.model.ComandaItem;
+import com.adega.model.ComandaPagamento;
+import com.adega.model.FormaPagamento;
+import com.adega.model.OrigemPagamento;
 import com.adega.model.Produto;
 import com.adega.model.StatusComanda;
 import com.adega.model.TipoMedidaVenda;
+import com.adega.model.Usuario;
 import com.adega.repository.AdegaRepository;
 import com.adega.repository.ComandaItemRepository;
+import com.adega.repository.ComandaPagamentoRepository;
 import com.adega.repository.ComandaRepository;
 import com.adega.repository.ProdutoRepository;
+import com.adega.repository.UsuarioRepository;
 import com.adega.util.BusinessTime;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -40,19 +48,44 @@ public class ComandaService {
     ComandaItemRepository comandaItemRepository;
 
     @Inject
+    ComandaPagamentoRepository comandaPagamentoRepository;
+
+    @Inject
     ProdutoRepository produtoRepository;
 
     @Inject
     AdegaRepository adegaRepository;
 
     @Inject
+    UsuarioRepository usuarioRepository;
+
+    @Inject
     SecurityService securityService;
 
-    public List<ComandaResponse> list(StatusComanda status) {
-        return comandaRepository.listByAdega(securityService.currentAdegaUuid(), status)
-                .stream()
-                .map(ComandaResponse::from)
-                .toList();
+    public PaginaResponse<ComandaResponse> list(
+            StatusComanda status,
+            LocalDate inicio,
+            LocalDate fim,
+            int pagina,
+            int tamanho
+    ) {
+        int safePage = Math.max(pagina, 0);
+        int safeSize = Math.min(Math.max(tamanho, 1), 200);
+        if (inicio != null && fim != null && fim.isBefore(inicio)) {
+            throw new BusinessException("A data final não pode ser anterior à data inicial.");
+        }
+
+        var query = comandaRepository.pageByAdega(
+                securityService.currentAdegaUuid(),
+                status,
+                inicio == null ? null : inicio.atStartOfDay(),
+                fim == null ? null : fim.plusDays(1).atStartOfDay(),
+                safePage,
+                safeSize
+        );
+        long total = query.count();
+        List<ComandaResponse> content = query.list().stream().map(ComandaResponse::from).toList();
+        return PaginaResponse.of(content, total, safePage, safeSize);
     }
 
     public ComandaResponse get(UUID uuid) {
@@ -181,7 +214,7 @@ public class ComandaService {
             throw new ForbiddenOperationException("Apenas gestores podem fechar comandas como fiado.");
         }
 
-        Comanda comanda = findCurrentAdegaComanda(uuid);
+        Comanda comanda = findCurrentAdegaComandaForUpdate(uuid);
         if (request.status() == StatusComanda.FIADO && comanda.status != StatusComanda.ABERTA) {
             throw new BusinessException("Apenas comandas abertas podem ser fechadas como fiado.");
         }
@@ -191,11 +224,19 @@ public class ComandaService {
             throw new BusinessException("Comanda já está paga.");
         }
 
-        comanda.status = request.status();
-        comanda.dataFechamento = BusinessTime.now();
         if (request.status() == StatusComanda.PAGA) {
+            BigDecimal saldoRestante = total(comanda).subtract(paidValue(comanda));
+            if (saldoRestante.compareTo(BigDecimal.ZERO) < 0) {
+                throw new BusinessException("O valor recebido não pode ultrapassar o total da comanda.");
+            }
+            if (saldoRestante.compareTo(BigDecimal.ZERO) > 0) {
+                ensurePaymentMethod(request.formaPagamento());
+                recordPayment(comanda, saldoRestante, request.formaPagamento(), OrigemPagamento.FECHAMENTO);
+            }
             comanda.valorPagoParcial = total(comanda);
         }
+        comanda.status = request.status();
+        comanda.dataFechamento = BusinessTime.now();
         return ComandaResponse.from(comanda);
     }
 
@@ -205,8 +246,9 @@ public class ComandaService {
             throw new BusinessException("O valor do pagamento parcial deve ser maior que zero.");
         }
 
-        Comanda comanda = findCurrentAdegaComanda(uuid);
+        Comanda comanda = findCurrentAdegaComandaForUpdate(uuid);
         ensureCanPayPartial(comanda);
+        ensurePaymentMethod(request.formaPagamento());
 
         BigDecimal total = total(comanda);
         if (total.compareTo(BigDecimal.ZERO) <= 0) {
@@ -219,6 +261,7 @@ public class ComandaService {
             throw new BusinessException("O pagamento parcial não pode ultrapassar o total da comanda.");
         }
 
+        recordPayment(comanda, request.valor(), request.formaPagamento(), OrigemPagamento.PARCIAL);
         comanda.valorPagoParcial = novoValorPago;
         return ComandaResponse.from(comanda);
     }
@@ -248,6 +291,11 @@ public class ComandaService {
 
     private Comanda findCurrentAdegaComanda(UUID uuid) {
         return comandaRepository.findByUuidAndAdega(uuid, securityService.currentAdegaUuid())
+                .orElseThrow(() -> new BusinessException("Comanda não encontrada."));
+    }
+
+    private Comanda findCurrentAdegaComandaForUpdate(UUID uuid) {
+        return comandaRepository.findByUuidAndAdegaForUpdate(uuid, securityService.currentAdegaUuid())
                 .orElseThrow(() -> new BusinessException("Comanda não encontrada."));
     }
 
@@ -327,6 +375,36 @@ public class ComandaService {
 
     private BigDecimal paidValue(Comanda comanda) {
         return comanda.valorPagoParcial == null ? BigDecimal.ZERO : comanda.valorPagoParcial;
+    }
+
+    private void ensurePaymentMethod(FormaPagamento formaPagamento) {
+        if (formaPagamento == null || formaPagamento == FormaPagamento.NAO_INFORMADA) {
+            throw new BusinessException("Informe a forma de pagamento.");
+        }
+    }
+
+    private void recordPayment(
+            Comanda comanda,
+            BigDecimal valor,
+            FormaPagamento formaPagamento,
+            OrigemPagamento origem
+    ) {
+        Usuario usuario = usuarioRepository.findByUuidAndAdega(
+                        securityService.currentUsuarioUuid(),
+                        securityService.currentAdegaUuid()
+                )
+                .orElseThrow(() -> new BusinessException("Usuário responsável pelo recebimento não encontrado."));
+
+        ComandaPagamento pagamento = new ComandaPagamento();
+        pagamento.adega = comanda.adega;
+        pagamento.comanda = comanda;
+        pagamento.usuario = usuario;
+        pagamento.valor = valor;
+        pagamento.formaPagamento = formaPagamento;
+        pagamento.origem = origem;
+        pagamento.dataPagamento = BusinessTime.now();
+        comandaPagamentoRepository.persist(pagamento);
+        comanda.pagamentos.add(0, pagamento);
     }
 
     private ItemPricing pricingFor(Produto produto, int quantidade, TipoMedidaVenda tipoMedida) {

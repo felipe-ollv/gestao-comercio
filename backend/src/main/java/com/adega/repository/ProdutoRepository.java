@@ -2,6 +2,7 @@ package com.adega.repository;
 
 import com.adega.model.Produto;
 import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
+import io.quarkus.panache.common.Page;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.util.List;
 import java.util.Optional;
@@ -19,5 +20,21 @@ public class ProdutoRepository implements PanacheRepositoryBase<Produto, Long> {
 
     public List<Produto> listActive() {
         return list("ativo = true order by adega.id, nome");
+    }
+
+    public long countLowStock(UUID adegaUuid) {
+        return count(
+                "adega.uuid = ?1 and ativo = true and quantidadeEstoqueUnidades <= alertaEstoqueUnidades",
+                adegaUuid
+        );
+    }
+
+    public List<Produto> listLowStock(UUID adegaUuid, int limit) {
+        return find(
+                "adega.uuid = ?1 and ativo = true "
+                        + "and quantidadeEstoqueUnidades <= alertaEstoqueUnidades "
+                        + "order by quantidadeEstoqueUnidades, nome",
+                adegaUuid
+        ).page(Page.ofSize(limit)).list();
     }
 }

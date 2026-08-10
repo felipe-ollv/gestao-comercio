@@ -14,17 +14,25 @@ import com.adega.dto.AdicionarItemRequest;
 import com.adega.dto.AdicionarItensRequest;
 import com.adega.dto.ComandaResponse;
 import com.adega.dto.AtualizarItemRequest;
+import com.adega.dto.FecharComandaRequest;
 import com.adega.dto.PagamentoParcialComandaRequest;
 import com.adega.exception.BusinessException;
 import com.adega.model.Comanda;
 import com.adega.model.ComandaItem;
+import com.adega.model.ComandaPagamento;
+import com.adega.model.FormaPagamento;
+import com.adega.model.OrigemPagamento;
 import com.adega.model.Produto;
 import com.adega.model.StatusComanda;
 import com.adega.model.TipoMedidaVenda;
+import com.adega.model.Usuario;
 import com.adega.repository.AdegaRepository;
 import com.adega.repository.ComandaItemRepository;
+import com.adega.repository.ComandaPagamentoRepository;
 import com.adega.repository.ComandaRepository;
 import com.adega.repository.ProdutoRepository;
+import com.adega.repository.UsuarioRepository;
+import com.adega.util.BusinessTime;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -36,6 +44,7 @@ import org.junit.jupiter.api.Test;
 class ComandaServiceTest {
     private final UUID adegaUuid = UUID.randomUUID();
     private final UUID comandaUuid = UUID.randomUUID();
+    private final UUID usuarioUuid = UUID.randomUUID();
 
     private ComandaService service;
     private ComandaRepository comandaRepository;
@@ -54,9 +63,17 @@ class ComandaServiceTest {
         service.comandaItemRepository = comandaItemRepository;
         service.produtoRepository = produtoRepository;
         service.adegaRepository = mock(AdegaRepository.class);
+        service.comandaPagamentoRepository = mock(ComandaPagamentoRepository.class);
+        service.usuarioRepository = mock(UsuarioRepository.class);
         service.securityService = securityService;
 
         when(securityService.currentAdegaUuid()).thenReturn(adegaUuid);
+        when(securityService.currentUsuarioUuid()).thenReturn(usuarioUuid);
+        Usuario usuario = new Usuario();
+        usuario.uuid = usuarioUuid;
+        usuario.nome = "Operador";
+        when(service.usuarioRepository.findByUuidAndAdega(usuarioUuid, adegaUuid))
+                .thenReturn(Optional.of(usuario));
         doAnswer(invocation -> {
             ComandaItem item = invocation.getArgument(0);
             if (item.uuid == null) {
@@ -64,6 +81,14 @@ class ComandaServiceTest {
             }
             return null;
         }).when(comandaItemRepository).persist(any(ComandaItem.class));
+        doAnswer(invocation -> {
+            ComandaPagamento pagamento = invocation.getArgument(0);
+            pagamento.uuid = UUID.randomUUID();
+            if (pagamento.dataPagamento == null) {
+                pagamento.dataPagamento = BusinessTime.now();
+            }
+            return null;
+        }).when(service.comandaPagamentoRepository).persist(any(ComandaPagamento.class));
     }
 
     @Test
@@ -145,12 +170,15 @@ class ComandaServiceTest {
 
         ComandaResponse response = service.payPartial(
                 comandaUuid,
-                new PagamentoParcialComandaRequest(new BigDecimal("7.00"))
+                new PagamentoParcialComandaRequest(new BigDecimal("7.00"), FormaPagamento.PIX)
         );
 
         assertEquals(StatusComanda.FIADO, response.status());
         assertEquals(new BigDecimal("12.00"), response.valorPagoParcial());
         assertEquals(new BigDecimal("8.00"), response.saldoPendente());
+        assertEquals(1, response.pagamentos().size());
+        assertEquals(FormaPagamento.PIX, response.pagamentos().get(0).formaPagamento());
+        assertEquals("Operador", response.pagamentos().get(0).usuarioNome());
     }
 
     @Test
@@ -163,9 +191,49 @@ class ComandaServiceTest {
                 BusinessException.class,
                 () -> service.payPartial(
                         comandaUuid,
-                        new PagamentoParcialComandaRequest(new BigDecimal("1.00"))
+                        new PagamentoParcialComandaRequest(new BigDecimal("1.00"), FormaPagamento.PIX)
                 )
         );
+    }
+
+    @Test
+    void closingAsPaidRecordsOnlyTheRemainingBalance() {
+        Comanda comanda = openComanda();
+        comanda.valorPagoParcial = new BigDecimal("5.00");
+        Produto cerveja = produto("Cerveja", 10, 1, "10.00", null);
+        ComandaItem item = item(comanda, cerveja, null, 0);
+        item.quantidadePedida = 2;
+        comanda.itens.add(item);
+        stubComanda(comanda);
+
+        ComandaResponse response = service.close(
+                comandaUuid,
+                new FecharComandaRequest(StatusComanda.PAGA, FormaPagamento.CARTAO_DEBITO)
+        );
+
+        assertEquals(StatusComanda.PAGA, response.status());
+        assertEquals(new BigDecimal("20.00"), response.valorPagoParcial());
+        assertEquals(BigDecimal.ZERO.setScale(2), response.saldoPendente());
+        assertEquals(1, response.pagamentos().size());
+        assertEquals(new BigDecimal("15.00"), response.pagamentos().get(0).valor());
+        assertEquals(FormaPagamento.CARTAO_DEBITO, response.pagamentos().get(0).formaPagamento());
+        assertEquals(OrigemPagamento.FECHAMENTO, response.pagamentos().get(0).origem());
+    }
+
+    @Test
+    void requiresPaymentMethodWhenClosingWithRemainingBalance() {
+        Comanda comanda = openComanda();
+        Produto cerveja = produto("Cerveja", 10, 1, "10.00", null);
+        comanda.itens.add(item(comanda, cerveja, null, 0));
+        stubComanda(comanda);
+
+        assertThrows(
+                BusinessException.class,
+                () -> service.close(comandaUuid, new FecharComandaRequest(StatusComanda.PAGA, null))
+        );
+
+        assertEquals(StatusComanda.ABERTA, comanda.status);
+        assertEquals(BigDecimal.ZERO, comanda.valorPagoParcial);
     }
 
     @Test
@@ -314,6 +382,8 @@ class ComandaServiceTest {
 
     private void stubComanda(Comanda comanda) {
         when(comandaRepository.findByUuidAndAdega(comandaUuid, adegaUuid))
+                .thenReturn(Optional.of(comanda));
+        when(comandaRepository.findByUuidAndAdegaForUpdate(comandaUuid, adegaUuid))
                 .thenReturn(Optional.of(comanda));
     }
 

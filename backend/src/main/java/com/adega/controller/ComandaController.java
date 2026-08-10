@@ -8,6 +8,7 @@ import com.adega.dto.ComandaResponse;
 import com.adega.dto.ExcluirComandaRequest;
 import com.adega.dto.FecharComandaRequest;
 import com.adega.dto.PagamentoParcialComandaRequest;
+import com.adega.dto.PaginaResponse;
 import com.adega.model.StatusComanda;
 import com.adega.service.ComandaService;
 import jakarta.annotation.security.RolesAllowed;
@@ -15,6 +16,7 @@ import jakarta.inject.Inject;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.PATCH;
 import jakarta.ws.rs.POST;
@@ -25,7 +27,7 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import java.util.List;
+import java.time.LocalDate;
 import java.util.UUID;
 
 @Path("/comandas")
@@ -37,8 +39,14 @@ public class ComandaController {
     ComandaService comandaService;
 
     @GET
-    public List<ComandaResponse> list(@QueryParam("status") StatusComanda status) {
-        return comandaService.list(status);
+    public PaginaResponse<ComandaResponse> list(
+            @QueryParam("status") StatusComanda status,
+            @QueryParam("inicio") LocalDate inicio,
+            @QueryParam("fim") LocalDate fim,
+            @QueryParam("pagina") @DefaultValue("0") int pagina,
+            @QueryParam("tamanho") @DefaultValue("100") int tamanho
+    ) {
+        return comandaService.list(status, inicio, fim, pagina, tamanho);
     }
 
     @GET

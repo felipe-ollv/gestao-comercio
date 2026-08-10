@@ -14,6 +14,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
@@ -63,6 +64,10 @@ public class Comanda extends PanacheEntityBase {
 
     @OneToMany(mappedBy = "comanda", cascade = CascadeType.ALL, orphanRemoval = true)
     public List<ComandaItem> itens = new ArrayList<>();
+
+    @OneToMany(mappedBy = "comanda", cascade = CascadeType.ALL)
+    @OrderBy("dataPagamento DESC")
+    public List<ComandaPagamento> pagamentos = new ArrayList<>();
 
     @PrePersist
     void prePersist() {

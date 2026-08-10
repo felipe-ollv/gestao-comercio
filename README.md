@@ -35,3 +35,13 @@ Para rodar só o build local do frontend:
 npm install
 npm run build
 ```
+
+## Atualização de banco existente
+
+Os scripts em `scripts_sql` são executados automaticamente apenas quando o volume do MySQL é criado. Para atualizar uma instalação que já possui dados, aplique a migração de histórico de recebimentos antes de iniciar a nova versão do backend:
+
+```bash
+docker compose exec -T db sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' < scripts_sql/14_add_comanda_payment_history.sql
+```
+
+A migração preserva os valores pagos existentes como registros `MIGRADO`, com forma de pagamento `NAO_INFORMADA`, pois essas informações não existiam no modelo anterior.

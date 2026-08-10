@@ -14,6 +14,7 @@ import Divider from "@mui/material/Divider";
 import Grid from "@mui/material/Grid";
 import Icon from "@mui/material/Icon";
 import IconButton from "@mui/material/IconButton";
+import MenuItem from "@mui/material/MenuItem";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
 import TextField from "@mui/material/TextField";
@@ -31,6 +32,7 @@ import Footer from "examples/Footer";
 import {
   Comanda,
   ComandaItem,
+  FormaPagamento,
   Produto,
   TipoMedidaVenda,
   comandasApi,
@@ -49,6 +51,25 @@ const comandaDate = new Intl.DateTimeFormat("pt-BR", {
   year: "numeric",
 });
 const comandaShortDate = new Intl.DateTimeFormat("pt-BR");
+const paymentDateTime = new Intl.DateTimeFormat("pt-BR", {
+  dateStyle: "short",
+  timeStyle: "short",
+});
+const paymentMethodLabels: Record<FormaPagamento, string> = {
+  DINHEIRO: "Dinheiro",
+  PIX: "PIX",
+  CARTAO_DEBITO: "Cartão de débito",
+  CARTAO_CREDITO: "Cartão de crédito",
+  OUTRO: "Outro",
+  NAO_INFORMADA: "Não informada",
+};
+const paymentMethodOptions: FormaPagamento[] = [
+  "PIX",
+  "DINHEIRO",
+  "CARTAO_DEBITO",
+  "CARTAO_CREDITO",
+  "OUTRO",
+];
 const normalizeSearch = (value: string) =>
   value
     .normalize("NFD")
@@ -107,7 +128,11 @@ function Comandas() {
     useState<TipoMedidaVenda>("UNIDADE");
   const [partialPaymentDialog, setPartialPaymentDialog] = useState(false);
   const [partialPaymentValue, setPartialPaymentValue] = useState("");
+  const [partialPaymentMethod, setPartialPaymentMethod] =
+    useState<FormaPagamento>("PIX");
   const [closingDialog, setClosingDialog] = useState(false);
+  const [closingPaymentMethod, setClosingPaymentMethod] =
+    useState<FormaPagamento>("PIX");
   const [deleteDialog, setDeleteDialog] = useState(false);
   const [deleteObservation, setDeleteObservation] = useState("");
   const [error, setError] = useState("");
@@ -272,8 +297,8 @@ function Comandas() {
     setError("");
     try {
       const [abertasData, fiadoData, produtosData] = await Promise.all([
-        comandasApi.list("ABERTA"),
-        comandasApi.list("FIADO"),
+        comandasApi.list("ABERTA", { tamanho: 200 }),
+        comandasApi.list("FIADO", { tamanho: 200 }),
         produtosApi.list(),
       ]);
       setComandasAbertas(abertasData);
@@ -540,10 +565,15 @@ function Comandas() {
     setLoadingAction("partial-payment");
     setError("");
     try {
-      const updated = await comandasApi.payPartial(selectedComanda.uuid, valor);
+      const updated = await comandasApi.payPartial(
+        selectedComanda.uuid,
+        valor,
+        partialPaymentMethod
+      );
       updateComandaState(updated);
       setPartialPaymentDialog(false);
       setPartialPaymentValue("");
+      setPartialPaymentMethod("PIX");
     } catch (paymentError) {
       setError(getApiErrorMessage(paymentError));
     } finally {
@@ -557,7 +587,13 @@ function Comandas() {
     setLoadingAction(status === "PAGA" ? "close-paga" : "close-fiado");
     setError("");
     try {
-      const updated = await comandasApi.close(selectedComanda.uuid, status);
+      const updated = await comandasApi.close(
+        selectedComanda.uuid,
+        status,
+        status === "PAGA" && selectedBalanceValue > 0
+          ? closingPaymentMethod
+          : undefined
+      );
       const nextAbertas = comandasAbertas.filter(
         (comanda) => comanda.uuid !== selectedComanda.uuid
       );
@@ -580,6 +616,7 @@ function Comandas() {
       );
       if (status === "FIADO") setComandasTab("FIADO");
       setClosingDialog(false);
+      setClosingPaymentMethod("PIX");
     } catch (closeError) {
       setError(getApiErrorMessage(closeError));
     } finally {
@@ -1588,6 +1625,37 @@ function Comandas() {
                           </MDTypography>
                         </Grid>
                       </Grid>
+                      {(selectedComanda.pagamentos || []).length > 0 && (
+                        <MDBox mt={2} pt={2} sx={{ borderTop: "1px solid #d1fae5" }}>
+                          <MDTypography variant="button" fontWeight="bold" display="block" mb={1}>
+                            Histórico de recebimentos
+                          </MDTypography>
+                          {(selectedComanda.pagamentos || []).map((pagamento) => (
+                            <MDBox
+                              key={pagamento.uuid}
+                              display="flex"
+                              justifyContent="space-between"
+                              alignItems={{ xs: "flex-start", sm: "center" }}
+                              gap={1}
+                              py={0.75}
+                              flexDirection={{ xs: "column", sm: "row" }}
+                            >
+                              <MDBox>
+                                <MDTypography variant="button" fontWeight="medium" display="block">
+                                  {paymentMethodLabels[pagamento.formaPagamento]}
+                                </MDTypography>
+                                <MDTypography variant="caption" color="text" display="block">
+                                  {paymentDateTime.format(new Date(pagamento.dataPagamento))} ·{" "}
+                                  {pagamento.usuarioNome}
+                                </MDTypography>
+                              </MDBox>
+                              <MDTypography variant="button" fontWeight="bold" sx={{ color: "#16a34a" }}>
+                                {currency.format(Number(pagamento.valor))}
+                              </MDTypography>
+                            </MDBox>
+                          ))}
+                        </MDBox>
+                      )}
                     </MDBox>
                   </>
                 )}
@@ -1632,6 +1700,23 @@ function Comandas() {
                   : ""
               }
             />
+            <TextField
+              select
+              label="Forma de pagamento"
+              required
+              fullWidth
+              value={partialPaymentMethod}
+              onChange={(event) =>
+                setPartialPaymentMethod(event.target.value as FormaPagamento)
+              }
+              sx={{ mt: 2 }}
+            >
+              {paymentMethodOptions.map((method) => (
+                <MenuItem key={method} value={method}>
+                  {paymentMethodLabels[method]}
+                </MenuItem>
+              ))}
+            </TextField>
           </DialogContent>
           <DialogActions>
             <MDButton
@@ -1744,6 +1829,25 @@ function Comandas() {
           <MDTypography variant="button" fontWeight="bold" display="block">
             Restante: {currency.format(selectedBalanceValue)}
           </MDTypography>
+          {selectedBalanceValue > 0 && (
+            <TextField
+              select
+              label="Forma de pagamento"
+              required
+              fullWidth
+              value={closingPaymentMethod}
+              onChange={(event) =>
+                setClosingPaymentMethod(event.target.value as FormaPagamento)
+              }
+              sx={{ mt: 2 }}
+            >
+              {paymentMethodOptions.map((method) => (
+                <MenuItem key={method} value={method}>
+                  {paymentMethodLabels[method]}
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
         </DialogContent>
         <DialogActions>
           <MDButton

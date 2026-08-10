@@ -4,6 +4,14 @@ export type PerfilUsuario = "GESTOR" | "ATENDENTE";
 export type StatusPagamento = "PENDENTE" | "PAGO";
 export type StatusComanda = "ABERTA" | "PAGA" | "FIADO" | "EXCLUIDA";
 export type TipoMedidaVenda = "UNIDADE" | "CAIXA";
+export type FormaPagamento =
+  | "DINHEIRO"
+  | "PIX"
+  | "CARTAO_DEBITO"
+  | "CARTAO_CREDITO"
+  | "OUTRO"
+  | "NAO_INFORMADA";
+export type OrigemPagamento = "PARCIAL" | "FECHAMENTO" | "MIGRADO";
 
 export type AuthResponse = {
   token: string | null;
@@ -48,6 +56,16 @@ export type ComandaItemInput = {
   tipoMedida: TipoMedidaVenda;
 };
 
+export type ComandaPagamento = {
+  uuid: string;
+  valor: number;
+  formaPagamento: FormaPagamento;
+  origem: OrigemPagamento;
+  dataPagamento: string;
+  usuarioUuid?: string | null;
+  usuarioNome: string;
+};
+
 export type Comanda = {
   uuid: string;
   nomeResponsavel: string;
@@ -56,10 +74,62 @@ export type Comanda = {
   dataExclusao?: string | null;
   status: StatusComanda;
   itens: ComandaItem[];
+  pagamentos: ComandaPagamento[];
   total: number;
   valorPagoParcial: number;
   saldoPendente: number;
   observacaoExclusao?: string | null;
+};
+
+export type DashboardResumo = {
+  periodo: { inicio: string; fim: string };
+  totalRecebido?: number | null;
+  recebimentosPorForma: Array<{
+    formaPagamento: FormaPagamento;
+    total: number;
+  }>;
+  ticketMedio?: number | null;
+  quantidadeComandasPagas?: number | null;
+  comparacaoPeriodoAnterior?: {
+    periodo: { inicio: string; fim: string };
+    totalRecebido: number;
+    diferenca: number;
+    variacaoPercentual?: number | null;
+  } | null;
+  evolucaoRecebimentos: Array<{
+    data: string;
+    total: number;
+  }>;
+  produtosMaisVendidos: Array<{
+    produtoUuid: string;
+    produtoNome: string;
+    unidadesVendidas: number;
+    valorVendido: number;
+  }>;
+  quantidadeComandasAbertas: number;
+  quantidadeComandasFiado: number;
+  valorPendenteFiado: number;
+  quantidadeProdutosBaixoEstoque: number;
+  comandasAbertas: Array<{
+    uuid: string;
+    nomeResponsavel: string;
+    quantidadeItens: number;
+    total: number;
+  }>;
+  produtosBaixoEstoque: Array<{
+    uuid: string;
+    nome: string;
+    quantidadeEstoqueUnidades: number;
+    alertaEstoqueUnidades: number;
+  }>;
+};
+
+type PaginaResponse<T> = {
+  conteudo: T[];
+  totalElementos: number;
+  pagina: number;
+  tamanho: number;
+  totalPaginas: number;
 };
 
 export type Usuario = {
@@ -99,10 +169,15 @@ export const produtosApi = {
 };
 
 export const comandasApi = {
-  list: (status?: StatusComanda) =>
+  list: (
+    status?: StatusComanda,
+    options?: { inicio?: string; fim?: string; pagina?: number; tamanho?: number }
+  ) =>
     api
-      .get<Comanda[]>("/comandas", { params: status ? { status } : undefined })
-      .then((response) => response.data),
+      .get<PaginaResponse<Comanda>>("/comandas", {
+        params: { status, ...options },
+      })
+      .then((response) => response.data.conteudo),
   open: (nomeResponsavel: string) =>
     api
       .post<Comanda>("/comandas", { nomeResponsavel })
@@ -129,17 +204,28 @@ export const comandasApi = {
       .then((response) => response.data),
   close: (
     comandaUuid: string,
-    status: Exclude<StatusComanda, "ABERTA" | "EXCLUIDA">
+    status: Exclude<StatusComanda, "ABERTA" | "EXCLUIDA">,
+    formaPagamento?: FormaPagamento
   ) =>
     api
-      .patch<Comanda>(`/comandas/${comandaUuid}/fechar`, { status })
+      .patch<Comanda>(`/comandas/${comandaUuid}/fechar`, { status, formaPagamento })
       .then((response) => response.data),
-  payPartial: (comandaUuid: string, valor: number) =>
+  payPartial: (comandaUuid: string, valor: number, formaPagamento: FormaPagamento) =>
     api
-      .patch<Comanda>(`/comandas/${comandaUuid}/pagamento-parcial`, { valor })
+      .patch<Comanda>(`/comandas/${comandaUuid}/pagamento-parcial`, {
+        valor,
+        formaPagamento,
+      })
       .then((response) => response.data),
   delete: (comandaUuid: string, observacao: string) =>
     api.delete(`/comandas/${comandaUuid}`, { data: { observacao } }),
+};
+
+export const dashboardApi = {
+  summary: (inicio: string, fim: string) =>
+    api
+      .get<DashboardResumo>("/dashboard/resumo", { params: { inicio, fim } })
+      .then((response) => response.data),
 };
 
 export const usuariosApi = {
