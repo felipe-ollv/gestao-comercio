@@ -34,6 +34,7 @@ export type Produto = {
   unidadesPorCaixa: number;
   valorUnidade: number;
   valorCaixa?: number | null;
+  custoUnidade?: number | null;
 };
 
 export type ComandaItem = {
@@ -122,6 +123,31 @@ export type DashboardResumo = {
     quantidadeEstoqueUnidades: number;
     alertaEstoqueUnidades: number;
   }>;
+};
+
+export type ProdutoRentabilidade = {
+  produtoUuid: string;
+  produtoNome: string;
+  unidadesVendidas: number;
+  valorVendido: number;
+  valorVendidoComCusto: number;
+  custoProdutosVendidos: number;
+  lucroBruto: number;
+  margemBrutaPercentual?: number | null;
+  valorVendidoSemCusto: number;
+  coberturaCustoPercentual?: number | null;
+};
+
+export type RelatorioLucro = {
+  periodo: { inicio: string; fim: string };
+  valorVendido: number;
+  valorVendidoComCusto: number;
+  custoProdutosVendidos: number;
+  lucroBruto: number;
+  margemBrutaPercentual?: number | null;
+  valorVendidoSemCusto: number;
+  coberturaCustoPercentual?: number | null;
+  produtos: ProdutoRentabilidade[];
 };
 
 type PaginaResponse<T> = {
@@ -225,6 +251,13 @@ export const dashboardApi = {
   summary: (inicio: string, fim: string) =>
     api
       .get<DashboardResumo>("/dashboard/resumo", { params: { inicio, fim } })
+      .then((response) => response.data),
+};
+
+export const relatoriosApi = {
+  profit: (inicio: string, fim: string) =>
+    api
+      .get<RelatorioLucro>("/relatorios/lucro", { params: { inicio, fim } })
       .then((response) => response.data),
 };
 

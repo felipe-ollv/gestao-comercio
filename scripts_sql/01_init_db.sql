@@ -67,12 +67,14 @@ CREATE TABLE IF NOT EXISTS produto (
     unidades_por_caixa INT NOT NULL DEFAULT 1,
     valor_unidade DECIMAL(10,2) NOT NULL,
     valor_caixa DECIMAL(10,2) NULL,
+    custo_unidade DECIMAL(10,2) NULL,
     ativo BOOLEAN NOT NULL DEFAULT TRUE,
     CONSTRAINT fk_produto_adega_uuid FOREIGN KEY (adega_uuid) REFERENCES adega(uuid),
     CONSTRAINT chk_produto_estoque CHECK (quantidade_estoque_unidades >= 0),
     CONSTRAINT chk_produto_alerta_estoque CHECK (alerta_estoque_unidades >= 0),
     CONSTRAINT chk_produto_alerta_ciclo CHECK (alerta_estoque_ciclo >= 0),
     CONSTRAINT chk_produto_unidades_caixa CHECK (unidades_por_caixa >= 1),
+    CONSTRAINT chk_produto_custo_unidade CHECK (custo_unidade IS NULL OR custo_unidade > 0),
     INDEX idx_produto_adega_nome (adega_uuid, nome)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -102,7 +104,8 @@ CREATE TABLE IF NOT EXISTS comanda (
     observacao_exclusao VARCHAR(500) NULL,
     CONSTRAINT fk_comanda_adega_uuid FOREIGN KEY (adega_uuid) REFERENCES adega(uuid),
     CONSTRAINT chk_comanda_status CHECK (status IN ('ABERTA', 'PAGA', 'FIADO', 'EXCLUIDA')),
-    INDEX idx_comanda_adega_status (adega_uuid, status)
+    INDEX idx_comanda_adega_status (adega_uuid, status),
+    INDEX idx_comanda_adega_status_fechamento (adega_uuid, status, data_fechamento)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS comanda_item (
@@ -114,6 +117,7 @@ CREATE TABLE IF NOT EXISTS comanda_item (
     unidades_deduzidas INT NOT NULL,
     tipo_medida_vendida VARCHAR(20) NOT NULL,
     valor_cobrado_unitario DECIMAL(10,2) NOT NULL,
+    custo_unitario_estoque DECIMAL(10,2) NULL,
     grupo_uuid BINARY(16) NULL,
     ordem_grupo INT NULL,
     data_adicao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -122,6 +126,9 @@ CREATE TABLE IF NOT EXISTS comanda_item (
     CONSTRAINT chk_item_quantidade CHECK (quantidade_pedida > 0),
     CONSTRAINT chk_item_unidades CHECK (unidades_deduzidas > 0),
     CONSTRAINT chk_item_tipo_medida CHECK (tipo_medida_vendida IN ('UNIDADE', 'CAIXA')),
+    CONSTRAINT chk_comanda_item_custo_unitario_estoque CHECK (
+        custo_unitario_estoque IS NULL OR custo_unitario_estoque > 0
+    ),
     INDEX idx_item_comanda (comanda_uuid),
     INDEX idx_item_produto (produto_uuid),
     INDEX idx_item_grupo (grupo_uuid)

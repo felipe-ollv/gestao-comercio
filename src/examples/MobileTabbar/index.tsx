@@ -17,6 +17,7 @@ const routeLabels: Record<string, string> = {
   comandas: "Comandas",
   produtos: "Produtos",
   usuarios: "Usuários",
+  relatorios: "Relatórios",
 };
 
 function MobileTabbar({ routes }: MobileTabbarProps) {

@@ -5,6 +5,7 @@ import Login from "layouts/login";
 import Comandas from "layouts/comandas";
 import Produtos from "layouts/produtos";
 import Usuarios from "layouts/usuarios";
+import Relatorios from "layouts/relatorios";
 
 import Icon from "@mui/material/Icon";
 
@@ -63,6 +64,15 @@ const routes: AppRoute[] = [
     icon: <Icon fontSize="small">group</Icon>,
     route: "/usuarios",
     component: <Usuarios />,
+    roles: ["GESTOR"],
+  },
+  {
+    type: "collapse",
+    name: "Relatórios",
+    key: "relatorios",
+    icon: <Icon fontSize="small">analytics</Icon>,
+    route: "/relatorios",
+    component: <Relatorios />,
     roles: ["GESTOR"],
   },
 ];

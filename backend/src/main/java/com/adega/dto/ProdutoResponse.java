@@ -11,9 +11,10 @@ public record ProdutoResponse(
         int alertaEstoqueUnidades,
         int unidadesPorCaixa,
         BigDecimal valorUnidade,
-        BigDecimal valorCaixa
+        BigDecimal valorCaixa,
+        BigDecimal custoUnidade
 ) {
-    public static ProdutoResponse from(Produto produto) {
+    public static ProdutoResponse from(Produto produto, boolean incluirCusto) {
         return new ProdutoResponse(
                 produto.uuid,
                 produto.nome,
@@ -21,7 +22,8 @@ public record ProdutoResponse(
                 produto.alertaEstoqueUnidades,
                 produto.unidadesPorCaixa,
                 produto.valorUnidade,
-                produto.valorCaixa
+                produto.valorCaixa,
+                incluirCusto ? produto.custoUnidade : null
         );
     }
 }

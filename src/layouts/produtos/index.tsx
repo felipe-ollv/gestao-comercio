@@ -32,6 +32,13 @@ import Footer from "examples/Footer";
 import { Produto, getApiErrorMessage, produtosApi } from "services/adega";
 
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+const percentage = new Intl.NumberFormat("pt-BR", {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+
+const calculateMargin = (saleValue: number, costValue: number) =>
+  saleValue > 0 ? ((saleValue - costValue) / saleValue) * 100 : null;
 
 const normalizeText = (value: string) =>
   value
@@ -46,6 +53,7 @@ const emptyForm = {
   unidadesPorCaixa: 1,
   valorUnidade: 0,
   valorCaixa: "",
+  custoUnidade: "",
 };
 
 function Produtos() {
@@ -111,6 +119,7 @@ function Produtos() {
       unidadesPorCaixa: produto.unidadesPorCaixa,
       valorUnidade: produto.valorUnidade,
       valorCaixa: produto.valorCaixa ?? "",
+      custoUnidade: produto.custoUnidade ?? "",
     });
     setDialogOpen(true);
   };
@@ -127,6 +136,7 @@ function Produtos() {
       unidadesPorCaixa: Number(form.unidadesPorCaixa),
       valorUnidade: Number(form.valorUnidade),
       valorCaixa: form.valorCaixa === "" ? null : Number(form.valorCaixa),
+      custoUnidade: form.custoUnidade === "" ? null : Number(form.custoUnidade),
     };
 
     try {
@@ -232,6 +242,8 @@ function Produtos() {
                   <TableCell>Un./caixa</TableCell>
                   <TableCell>Valor unidade</TableCell>
                   <TableCell>Valor caixa</TableCell>
+                  {isGestor && <TableCell>Custo un.</TableCell>}
+                  {isGestor && <TableCell>Rentabilidade</TableCell>}
                   {isGestor && <TableCell align="right">Ações</TableCell>}
                 </TableRow>
               </TableHead>
@@ -239,6 +251,15 @@ function Produtos() {
                 {visibleProdutos.map((produto) => {
                   const isLowStock =
                     produto.quantidadeEstoqueUnidades <= produto.alertaEstoqueUnidades;
+                  const hasCost = produto.custoUnidade !== null && produto.custoUnidade !== undefined;
+                  const unitCost = Number(produto.custoUnidade || 0);
+                  const unitSaleValue = Number(produto.valorUnidade || 0);
+                  const boxSaleValue = Number(produto.valorCaixa || 0);
+                  const boxCost = unitCost * produto.unidadesPorCaixa;
+                  const unitMargin = hasCost ? calculateMargin(unitSaleValue, unitCost) : null;
+                  const boxMargin = hasCost && produto.valorCaixa
+                    ? calculateMargin(boxSaleValue, boxCost)
+                    : null;
 
                   return (
                     <TableRow
@@ -283,6 +304,33 @@ function Produtos() {
                         {produto.valorCaixa ? currency.format(Number(produto.valorCaixa)) : "-"}
                       </TableCell>
                       {isGestor && (
+                        <TableCell>
+                          {hasCost ? (
+                            currency.format(unitCost)
+                          ) : (
+                            <Chip label="Custo pendente" size="small" color="warning" />
+                          )}
+                        </TableCell>
+                      )}
+                      {isGestor && (
+                        <TableCell>
+                          {hasCost ? (
+                            <MDBox display="flex" flexDirection="column">
+                              <MDTypography variant="button" color="text">
+                                Unidade: {currency.format(unitSaleValue - unitCost)} ({percentage.format(unitMargin || 0)}%)
+                              </MDTypography>
+                              {produto.valorCaixa && (
+                                <MDTypography variant="caption" color="text">
+                                  Caixa: {currency.format(boxSaleValue - boxCost)} ({percentage.format(boxMargin || 0)}%)
+                                </MDTypography>
+                              )}
+                            </MDBox>
+                          ) : (
+                            "—"
+                          )}
+                        </TableCell>
+                      )}
+                      {isGestor && (
                         <TableCell align="right">
                           <Tooltip title="Editar">
                             <IconButton
@@ -313,7 +361,7 @@ function Produtos() {
                 })}
                 {visibleProdutos.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={isGestor ? 7 : 6}>
+                    <TableCell colSpan={isGestor ? 9 : 6}>
                       {produtos.length === 0
                         ? "Nenhum produto cadastrado."
                         : "Nenhum produto encontrado para o filtro informado."}
@@ -410,6 +458,44 @@ function Produtos() {
                   onChange={(event) => setForm({ ...form, valorCaixa: event.target.value })}
                 />
               </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  label="Custo por unidade"
+                  type="number"
+                  fullWidth
+                  helperText="Quanto você paga por uma unidade mantida no estoque."
+                  inputProps={{ min: 0.01, step: 0.01 }}
+                  value={form.custoUnidade}
+                  onChange={(event) => setForm({ ...form, custoUnidade: event.target.value })}
+                />
+              </Grid>
+              {form.custoUnidade !== "" && Number(form.custoUnidade) > 0 && (
+                <Grid item xs={12}>
+                  <Alert severity="info">
+                    Custo da unidade: {currency.format(
+                      Number(form.custoUnidade) * Number(form.unidadesPorCaixa || 1)
+                    )}. Lucro por unidade: {currency.format(
+                      Number(form.valorUnidade || 0) - Number(form.custoUnidade)
+                    )} ({percentage.format(
+                      calculateMargin(
+                        Number(form.valorUnidade || 0),
+                        Number(form.custoUnidade)
+                      ) || 0
+                    )}%)
+                    {form.valorCaixa !== "" && (
+                      <>. Lucro por caixa: {currency.format(
+                        Number(form.valorCaixa) -
+                          Number(form.custoUnidade) * Number(form.unidadesPorCaixa || 1)
+                      )} ({percentage.format(
+                        calculateMargin(
+                          Number(form.valorCaixa),
+                          Number(form.custoUnidade) * Number(form.unidadesPorCaixa || 1)
+                        ) || 0
+                      )}%)</>
+                    )}
+                  </Alert>
+                </Grid>
+              )}
             </Grid>
           </DialogContent>
           <DialogActions>

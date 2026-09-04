@@ -96,6 +96,8 @@ class ComandaServiceTest {
         Comanda comanda = openComanda();
         Produto whisky = produto("Whisky", 10, 1, "10.00", null);
         Produto energetico = produto("Energético", 24, 6, "7.00", "36.00");
+        whisky.custoUnidade = new BigDecimal("4.00");
+        energetico.custoUnidade = new BigDecimal("3.00");
         stubComanda(comanda);
         stubProduto(whisky);
         stubProduto(energetico);
@@ -114,10 +116,29 @@ class ComandaServiceTest {
         assertEquals(2, response.itens().size());
         assertNotNull(response.itens().get(0).grupoUuid());
         assertEquals(response.itens().get(0).grupoUuid(), response.itens().get(1).grupoUuid());
+        assertEquals(new BigDecimal("4.00"), comanda.itens.get(0).custoUnitarioEstoque);
+        assertEquals(new BigDecimal("3.00"), comanda.itens.get(1).custoUnitarioEstoque);
         assertEquals(0, response.itens().get(0).ordemGrupo());
         assertEquals(1, response.itens().get(1).ordemGrupo());
         assertNotNull(response.itens().get(0).dataAdicao());
         assertEquals(response.itens().get(0).dataAdicao(), response.itens().get(1).dataAdicao());
+    }
+
+    @Test
+    void keepsCostSnapshotWhenProductCostChangesLater() {
+        Comanda comanda = openComanda();
+        Produto cerveja = produto("Cerveja", 12, 1, "8.00", null);
+        cerveja.custoUnidade = new BigDecimal("3.50");
+        stubComanda(comanda);
+        stubProduto(cerveja);
+
+        service.addItem(
+                comandaUuid,
+                new AdicionarItemRequest(cerveja.uuid, 2, TipoMedidaVenda.UNIDADE)
+        );
+        cerveja.custoUnidade = new BigDecimal("4.25");
+
+        assertEquals(new BigDecimal("3.50"), comanda.itens.get(0).custoUnitarioEstoque);
     }
 
     @Test

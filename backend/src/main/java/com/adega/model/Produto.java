@@ -55,6 +55,9 @@ public class Produto extends PanacheEntityBase {
     @Column(name = "valor_caixa", precision = 10, scale = 2)
     public BigDecimal valorCaixa;
 
+    @Column(name = "custo_unidade", precision = 10, scale = 2)
+    public BigDecimal custoUnidade;
+
     @Column(nullable = false)
     public boolean ativo = true;
 

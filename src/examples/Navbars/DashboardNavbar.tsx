@@ -17,6 +17,7 @@ const titles: Record<string, string> = {
   "/comandas": "Comandas",
   "/produtos": "Produtos",
   "/usuarios": "Usuarios",
+  "/relatorios": "Relatórios",
 };
 
 function DashboardNavbar() {

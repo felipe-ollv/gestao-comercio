@@ -25,9 +25,10 @@ public class ProdutoService {
     SecurityService securityService;
 
     public List<ProdutoResponse> list() {
+        boolean incluirCusto = securityService.isGestor();
         return produtoRepository.listByAdega(securityService.currentAdegaUuid())
                 .stream()
-                .map(ProdutoResponse::from)
+                .map(produto -> ProdutoResponse.from(produto, incluirCusto))
                 .toList();
     }
 
@@ -41,14 +42,14 @@ public class ProdutoService {
         fill(produto, request);
         produtoRepository.persist(produto);
 
-        return ProdutoResponse.from(produto);
+        return ProdutoResponse.from(produto, true);
     }
 
     @Transactional
     public ProdutoResponse update(UUID uuid, ProdutoRequest request) {
         Produto produto = getByUuid(uuid);
         fill(produto, request);
-        return ProdutoResponse.from(produto);
+        return ProdutoResponse.from(produto, true);
     }
 
     @Transactional
@@ -73,5 +74,6 @@ public class ProdutoService {
         produto.unidadesPorCaixa = request.unidadesPorCaixa();
         produto.valorUnidade = request.valorUnidade();
         produto.valorCaixa = request.valorCaixa();
+        produto.custoUnidade = request.custoUnidade();
     }
 }

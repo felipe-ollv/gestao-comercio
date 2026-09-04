@@ -52,6 +52,9 @@ public class ComandaItem extends PanacheEntityBase {
     @Column(name = "valor_cobrado_unitario", nullable = false, precision = 10, scale = 2)
     public BigDecimal valorCobradoUnitario;
 
+    @Column(name = "custo_unitario_estoque", precision = 10, scale = 2)
+    public BigDecimal custoUnitarioEstoque;
+
     @JdbcTypeCode(SqlTypes.BINARY)
     @Column(name = "grupo_uuid", columnDefinition = "BINARY(16)")
     public UUID grupoUuid;

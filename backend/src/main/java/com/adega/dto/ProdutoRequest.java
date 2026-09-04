@@ -14,6 +14,7 @@ public record ProdutoRequest(
         @PositiveOrZero int alertaEstoqueUnidades,
         @Min(1) int unidadesPorCaixa,
         @NotNull @DecimalMin("0.01") BigDecimal valorUnidade,
-        @Positive BigDecimal valorCaixa
+        @Positive BigDecimal valorCaixa,
+        @Positive BigDecimal custoUnidade
 ) {
 }

@@ -183,6 +183,7 @@ public class ComandaService {
         item.unidadesDeduzidas = pricing.unidadesParaDeduzir();
         item.tipoMedidaVendida = request.tipoMedida();
         item.valorCobradoUnitario = pricing.valorAplicado();
+        item.custoUnitarioEstoque = produto.custoUnidade;
 
         return ComandaResponse.from(comanda);
     }
@@ -350,6 +351,7 @@ public class ComandaService {
         item.unidadesDeduzidas = pricing.unidadesParaDeduzir();
         item.tipoMedidaVendida = request.tipoMedida();
         item.valorCobradoUnitario = pricing.valorAplicado();
+        item.custoUnitarioEstoque = produto.custoUnidade;
         item.grupoUuid = grupoUuid;
         item.ordemGrupo = ordemGrupo;
         item.dataAdicao = dataAdicao;
